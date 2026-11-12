@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stopwatch Timer</title>
+<style>
+  :root{
+    --bg:#0d0f14; --case:#1a1e27; --case2:#252a36; --face:#10131a;
+    --ink:#f2f4f8; --mute:#8b93a3; --track:#242a37;
+    --accent:#4fd1a5; --warn:#f5b942; --danger:#ff5d5d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(circle at 50% 0%,#1a2030,var(--bg) 60%);
+    color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:16px;
+  }
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%}
+  .hint{color:var(--mute);font-size:13px;text-align:center;max-width:340px;line-height:1.4}
+  .hint b{color:var(--ink);font-weight:600}
+
+  /* ---------- the stopwatch ---------- */
+  .watch{
+    width:min(340px,100%); background:linear-gradient(160deg,var(--case2),var(--case));
+    border-radius:28px; padding:18px 18px 16px; position:relative;
+    box-shadow:0 18px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .crown{position:absolute;top:-12px;left:50%;transform:translateX(-50%);width:34px;height:16px;border-radius:5px 5px 0 0;background:linear-gradient(#3a4152,#272c38)}
+  .dial{position:relative;width:100%;aspect-ratio:1;margin:4px 0 10px}
+  .dial svg{width:100%;height:100%;display:block}
+  .face{fill:var(--face);stroke:#2b3140;stroke-width:1.5}
+  .tick{stroke:#3a4152;stroke-width:1}
+  .tick.major{stroke:#5b6579;stroke-width:1.6}
+  .track{fill:none;stroke:var(--track);stroke-width:9}
+  .prog{fill:none;stroke:var(--accent);stroke-width:9;stroke-linecap:round;transition:stroke .3s}
+  .readout{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .time{font-variant-numeric:tabular-nums;font-weight:700;font-size:clamp(40px,15vw,58px);letter-spacing:-1px;line-height:1}
+  .sub{margin-top:6px;color:var(--mute);font-size:13px}
+  .watch.warn .prog{stroke:var(--warn)}
+  .watch.danger .prog,.watch.done .prog{stroke:var(--danger)}
+  .watch.danger .time{color:var(--danger)}
+  .watch.done .time{color:var(--danger);animation:blink .6s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  .row{display:flex;gap:10px}
+  button{
+    font:inherit;cursor:pointer;border:0;border-radius:14px;color:var(--ink);
+    background:#2c3240;padding:11px 14px;transition:filter .15s, transform .05s;
+  }
+  button:hover{filter:brightness(1.2)} button:active{transform:scale(.97)}
+  .go{flex:2;background:var(--accent);color:#06241a;font-weight:700;font-size:16px}
+  .go.pause{background:var(--warn);color:#2a1d00}
+  .reset{flex:1}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .chip{flex:1 1 calc(20% - 6px);min-width:48px;padding:8px 0;border-radius:10px;font-size:13px;background:#222836;color:#c8cfdc}
+  .chip.on{background:#2f6f5c;color:#fff}
+  .custom{display:flex;align-items:center;gap:6px;margin-top:12px}
+  .custom label{color:var(--mute);font-size:13px;margin-right:2px}
+  .custom input{
+    width:54px;background:#10131a;border:1px solid #2b3140;border-radius:10px;color:var(--ink);
+    padding:8px;font:inherit;text-align:center;
+  }
+  .custom span{color:var(--mute);font-size:13px}
+  .custom .set{margin-left:auto;padding:8px 14px;background:#2f6f5c}
+  .pop{margin-top:12px;width:100%;background:transparent;border:1px solid #3a4152;color:#c8cfdc;font-size:14px}
+
+  .placeholder{
+    width:min(340px,100%);padding:28px 18px;border:1px dashed #3a4152;border-radius:20px;
+    text-align:center;color:var(--mute);font-size:14px;line-height:1.5
+  }
+  .placeholder button{margin-top:12px;background:#2f6f5c}
+
+  /* inside the floating window */
+  body.pip{padding:10px;align-items:flex-start}
+  body.pip .watch{width:100%;border-radius:20px;padding:14px}
+  body.pip .crown,body.pip .pop{display:none}
+  body.pip .time{font-size:clamp(34px,13vw,54px)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap" id="host">
+  <div class="watch" id="watch">
+    <div class="crown"></div>
+    <div class="dial">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="face" cx="100" cy="100" r="98"/>
+        <g id="ticks"></g>
+        <g transform="rotate(-90 100 100)">
+          <circle class="track" cx="100" cy="100" r="78"/>
+          <circle class="prog" id="prog" cx="100" cy="100" r="78"/>
+        </g>
+      </svg>
+      <div class="readout">
+        <div class="time" id="time" role="timer" aria-live="off">00:30</div>
+        <div class="sub" id="sub">of 00:30</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="go" id="go">Start</button>
+      <button class="reset" id="reset">Reset</button>
+    </div>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="custom">
+      <label>Custom</label>
+      <input id="mm" type="number" min="0" max="999" value="0" aria-label="Minutes"><span>min</span>
+      <input id="ss" type="number" min="0" max="59" value="30" aria-label="Seconds"><span>sec</span>
+      <button class="set" id="set">Set</button>
+    </div>
+
+    <button class="pop" id="pop">⧉ Pop out &amp; keep on top</button>
+  </div>
+
+  <div class="placeholder" id="placeholder" hidden>
+    Your timer is floating on top of your other windows.
+    <br><button id="dock">Bring it back here</button>
+  </div>
+
+  <p class="hint" id="hint"><b>Space</b> start / pause &nbsp;·&nbsp; <b>R</b> reset<br>
+  Use <b>Pop out</b> to float the timer above your slides or any other window.</p>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const watch=$('watch'), prog=$('prog'), timeEl=$('time'), subEl=$('sub'),
+        goBtn=$('go'), chipsEl=$('chips'), placeholder=$('placeholder'), host=$('host');
+
+  const R = 78, C = 2*Math.PI*R;
+  prog.style.strokeDasharray = C;
+
+  // dial ticks
+  const ticks=$('ticks'); let t='';
+  for(let i=0;i<60;i++){
+    const a=i*6*Math.PI/180, major=i%5===0, r1=major?86:90, r2=94;
+    t+=`<line class="tick${major?' major':''}" x1="${100+r1*Math.sin(a)}" y1="${100-r1*Math.cos(a)}" x2="${100+r2*Math.sin(a)}" y2="${100-r2*Math.cos(a)}"/>`;
+  }
+  ticks.innerHTML=t;
+
+  // presets (seconds)
+  const PRESETS=[[15,'15s'],[20,'20s'],[30,'30s'],[45,'45s'],[60,'1m'],[120,'2m'],[300,'5m'],[600,'10m'],[900,'15m'],[1800,'30m']];
+  PRESETS.forEach(([s,l])=>{
+    const b=document.createElement('button'); b.className='chip'; b.textContent=l; b.dataset.s=s;
+    b.onclick=()=>setDuration(s); chipsEl.appendChild(b);
+  });
+
+  // state
+  let total=30, remaining=30000, running=false, endAt=0, finished=false;
+
+  // un-throttled ticker (Web Worker) so it stays accurate in background tabs / pop-out
+  const worker=new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),100)'],{type:'text/javascript'})));
+  worker.onmessage=()=>{ if(running) tick(); };
+
+  const fmt=s=>{
+    s=Math.max(0,Math.ceil(s));
+    const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60, p=n=>String(n).padStart(2,'0');
+    return h? `${h}:${p(m)}:${p(x)}` : `${p(m)}:${p(x)}`;
+  };
+
+  function render(){
+    const secs=remaining/1000;
+    timeEl.textContent = finished ? "00:00" : fmt(secs);
+    subEl.textContent = finished ? "Time's up!" : 'of '+fmt(total);
+    prog.style.strokeDashoffset = C*(1 - (total? remaining/(total*1000):0));
+    watch.classList.toggle('done',finished);
+    watch.classList.toggle('danger',!finished && running && secs<=5);
+    watch.classList.toggle('warn',!finished && secs>5 && secs<=10 && total>15);
+    goBtn.textContent = running ? 'Pause' : (remaining<total*1000 && !finished ? 'Resume' : 'Start');
+    goBtn.classList.toggle('pause',running);
+    chipsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',+c.dataset.s===total));
+    document.title = (running||finished) ? `${finished?'Time’s up':fmt(secs)} · Timer` : 'Stopwatch Timer';
+    drawFallback();
+  }
+
+  function tick(){
+    remaining=Math.max(0,endAt-performance.now());
+    if(remaining<=0){ running=false; finished=true; remaining=0; beep(); }
+    render();
+  }
+
+  function start(){
+    if(running) return;
+    if(finished||remaining<=0){ reset(); }
+    audio(); running=true; endAt=performance.now()+remaining; render();
+  }
+  function pause(){ if(!running) return; running=false; remaining=Math.max(0,endAt-performance.now()); render(); }
+  function reset(){ running=false; finished=false; remaining=total*1000; render(); }
+  function setDuration(s){
+    total=Math.max(1,Math.round(s)); running=false; finished=false; remaining=total*1000;
+    $('mm').value=Math.floor(total/60); $('ss').value=total%60; render();
+  }
+
+  goBtn.onclick=()=> running?pause():start();
+  $('reset').onclick=reset;
+  $('set').onclick=()=>{
+    const s=(+$('mm').value||0)*60+(+$('ss').value||0);
+    if(s>0) setDuration(s);
+  };
+  ['mm','ss'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('set').click(); e.stopPropagation(); } else e.stopPropagation(); }));
+
+  // keyboard
+  function onKey(e){
+    if(e.target.tagName==='INPUT') return;
+    if(e.code==='Space'){ e.preventDefault(); running?pause():start(); }
+    else if(e.key==='r'||e.key==='R'){ reset(); }
+  }
+  document.addEventListener('keydown',onKey);
+
+  // sound
+  let ac;
+  function audio(){ try{ ac=ac||new (window.AudioContext||window.webkitAudioContext)(); if(ac.state==='suspended') ac.resume(); }catch(e){} }
+  function beep(){
+    audio(); if(!ac) return;
+    [0,.35,.7].forEach(d=>{
+      const o=ac.createOscillator(), g=ac.createGain(), t0=ac.currentTime+d;
+      o.type='sine'; o.frequency.value=880; o.connect(g); g.connect(ac.destination);
+      g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(.35,t0+.02); g.gain.exponentialRampToValueAtTime(.001,t0+.28);
+      o.start(t0); o.stop(t0+.3);
+    });
+  }
+
+  /* ---------- Pop out (always on top) ---------- */
+  let pipWin=null, fbVideo=null, fbCanvas=null, fbCtx=null;
+
+  async function popOut(){
+    if('documentPictureInPicture' in window){
+      try{
+        pipWin = await documentPictureInPicture.requestWindow({width:360,height:600});
+        document.querySelectorAll('style').forEach(s=>pipWin.document.head.appendChild(s.cloneNode(true)));
+        pipWin.document.title='Timer';
+        pipWin.document.body.classList.add('pip');
+        pipWin.document.body.appendChild(watch);
+        pipWin.document.addEventListener('keydown',onKey);
+        placeholder.hidden=false; $('hint').hidden=true;
+        pipWin.addEventListener('pagehide',dock);
+        return;
+      }catch(e){ console.warn(e); }
+    }
+    // Fallback: video Picture-in-Picture (display only; controls stay in this tab)
+    try{
+      fbCanvas=document.createElement('canvas'); fbCanvas.width=fbCanvas.height=360; fbCtx=fbCanvas.getContext('2d');
+      fbVideo=document.createElement('video'); fbVideo.muted=true; fbVideo.playsInline=true;
+      fbVideo.srcObject=fbCanvas.captureStream(15); drawFallback();
+      await fbVideo.play(); await fbVideo.requestPictureInPicture();
+      fbVideo.addEventListener('leavepictureinpicture',()=>{ fbVideo=null; },{once:true});
+    }catch(e){ alert('Pop-out isn’t supported in this browser. Please use Chrome or Edge.'); }
+  }
+  function dock(){
+    if(watch.parentNode!==host){ host.insertBefore(watch,placeholder); }
+    placeholder.hidden=true; $('hint').hidden=false; pipWin=null;
+  }
+  function drawFallback(){
+    if(!fbVideo||!fbCtx) return;
+    const c=fbCtx, s=remaining/1000, danger=finished||(running&&s<=5), warn=s<=10&&total>15;
+    c.fillStyle='#0d0f14'; c.fillRect(0,0,360,360);
+    c.lineWidth=18; c.lineCap='round';
+    c.strokeStyle='#242a37'; c.beginPath(); c.arc(180,180,140,0,Math.PI*2); c.stroke();
+    c.strokeStyle= danger?'#ff5d5d':warn?'#f5b942':'#4fd1a5';
+    const f=total? remaining/(total*1000):0;
+    c.beginPath(); c.arc(180,180,140,-Math.PI/2,-Math.PI/2+Math.PI*2*f); c.stroke();
+    c.fillStyle= danger?'#ff5d5d':'#f2f4f8'; c.font='700 88px system-ui,sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+    c.fillText(finished?'00:00':fmt(s),180,172);
+    c.fillStyle='#8b93a3'; c.font='24px system-ui,sans-serif'; c.fillText(finished?"Time's up!":'of '+fmt(total),180,240);
+  }
+  $('pop').onclick=popOut; $('dock').onclick=()=>{ if(pipWin) pipWin.close(); else dock(); };
+  if(!('documentPictureInPicture' in window) && !document.pictureInPictureEnabled) $('pop').hidden=true;
+
+  setDuration(30);
+})();
+</script>
+</body>
+</html>
